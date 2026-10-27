@@ -57,7 +57,7 @@ jobs:
           set -euo pipefail
           app_path="$DERIVED_DATA_PATH/Build/Products/Release/BetterOSD.app"
           codesign --verify --deep --strict --verbose=2 "$app_path"
-          lipo -verify_arch arm64 "$app_path/Contents/MacOS/BetterOSD"
+          lipo "$app_path/Contents/MacOS/BetterOSD" -verify_arch arm64
 
           ditto -c -k --sequesterRsrc --keepParent \
             "$app_path" "$ARTIFACT_DIR/BetterOSD-arm64.zip"
