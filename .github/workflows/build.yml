@@ -1,0 +1,90 @@
+name: Build macOS App
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      DERIVED_DATA_PATH: ${{ github.workspace }}/build/DerivedData
+      ARTIFACT_DIR: ${{ github.workspace }}/build/artifacts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build Apple Silicon app
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_DIR"
+          xcodebuild \
+            -project BetterOSD.xcodeproj \
+            -scheme BetterOSD \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
+            -onlyUsePackageVersionsFromResolvedFile \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="-" \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            build 2>&1 | tee build/build.log
+
+      - name: Package and verify app
+        run: |
+          set -euo pipefail
+          app_path="$DERIVED_DATA_PATH/Build/Products/Release/BetterOSD.app"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          lipo -verify_arch arm64 "$app_path/Contents/MacOS/BetterOSD"
+
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$app_path" "$ARTIFACT_DIR/BetterOSD-arm64.zip"
+
+          mkdir -p build/dmg
+          ditto "$app_path" build/dmg/BetterOSD.app
+          ln -s /Applications build/dmg/Applications
+          hdiutil create \
+            -volname BetterOSD \
+            -srcfolder build/dmg \
+            -ov -format UDZO \
+            "$ARTIFACT_DIR/BetterOSD-arm64.dmg"
+
+      - name: Upload app artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: BetterOSD-arm64
+          path: ${{ env.ARTIFACT_DIR }}/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: BetterOSD-build-log
+          path: build/build.log
+          if-no-files-found: ignore
+          retention-days: 14
