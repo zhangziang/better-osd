@@ -15,6 +15,8 @@ The **Build macOS App** GitHub Actions workflow compiles the app on branch pushe
 
 These Apple Silicon builds use ad hoc signing and do not require Apple Developer secrets. They are not notarized, so macOS may require you to allow the app in **System Settings → Privacy & Security**. The existing **Release (Notarized DMG)** workflow still requires signing and notarization secrets.
 
+The ad hoc build applies a library-validation exception so it can load Sparkle without a Team ID while keeping Hardened Runtime enabled. This exception is limited to the test build workflow. CI also launches the app for 10 seconds before packaging and uploads the launch log with the build log.
+
 Once the build workflow is on the default branch, you can also start it manually with **Run workflow**.
 
 ## App Store

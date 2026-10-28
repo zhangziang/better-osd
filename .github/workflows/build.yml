@@ -48,17 +48,48 @@ jobs:
             ONLY_ACTIVE_ARCH=YES \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_ENTITLEMENTS=.github/adhoc.entitlements.plist \
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             build 2>&1 | tee build/build.log
 
-      - name: Package and verify app
+      - name: Verify app
         run: |
           set -euo pipefail
           app_path="$DERIVED_DATA_PATH/Build/Products/Release/BetterOSD.app"
           codesign --verify --deep --strict --verbose=2 "$app_path"
           lipo "$app_path/Contents/MacOS/BetterOSD" -verify_arch arm64
 
+      - name: Smoke-test app launch
+        run: |
+          set -euo pipefail
+          app_path="$DERIVED_DATA_PATH/Build/Products/Release/BetterOSD.app"
+          "$app_path/Contents/MacOS/BetterOSD" \
+            -accessibilityPrompted YES \
+            -showInMenuBar NO \
+            -SUEnableAutomaticChecks NO \
+            > build/launch.log 2>&1 &
+          app_pid=$!
+          cleanup() {
+            kill "$app_pid" 2>/dev/null || true
+            wait "$app_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for attempt in {1..10}; do
+            sleep 1
+            if ! kill -0 "$app_pid" 2>/dev/null; then
+              cat build/launch.log
+              echo "::error::BetterOSD exited during the launch check."
+              exit 1
+            fi
+          done
+          echo "BetterOSD remained running for 10 seconds."
+
+      - name: Package app
+        run: |
+          set -euo pipefail
+          app_path="$DERIVED_DATA_PATH/Build/Products/Release/BetterOSD.app"
           ditto -c -k --sequesterRsrc --keepParent \
             "$app_path" "$ARTIFACT_DIR/BetterOSD-arm64.zip"
 
@@ -85,6 +116,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: BetterOSD-build-log
-          path: build/build.log
+          path: |
+            build/build.log
+            build/launch.log
           if-no-files-found: ignore
           retention-days: 14
